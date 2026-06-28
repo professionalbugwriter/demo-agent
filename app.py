@@ -312,7 +312,52 @@ Rules:
 # AGENTIC LOOP
 # ══════════════════════════════════════════════════════════════════════════════
 
-def run_agent(user_prompt: str, history: list, df: pd.DataFrame, api_key: str):
+# ──────────────────────────────────────────────────────────────────────────────
+# Helper: human-readable tool call descriptions for the status log
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _describe_tool_call(tool_name: str, args: dict) -> str:
+    """Return a concise plain-English description of what a tool call is doing."""
+    region = args.get("filter_region") or "all"
+    status = args.get("filter_status") or "all"
+    region_str = "all regions" if region == "all" else f"{region} region"
+    status_str = "" if status == "all" else f" · {status} deals only"
+
+    if tool_name == "bar_chart":
+        y     = "Revenue" if args.get("y_col") == "DealValue" else "Deal count"
+        x     = args.get("x_col", "?")
+        grp   = args.get("group_by") or "none"
+        grp_s = f", grouped by {grp}" if grp != "none" else ""
+        return f"{y} by {x}{grp_s} — {region_str}{status_str}"
+
+    if tool_name == "line_chart":
+        y     = "Revenue" if args.get("y_col") == "DealValue" else "Deal count"
+        grp   = args.get("group_by") or "none"
+        grp_s = f" per {grp}" if grp != "none" else ""
+        return f"Weekly {y} trend{grp_s} — {region_str}{status_str}"
+
+    if tool_name == "pie_chart":
+        val   = "Revenue share" if args.get("value_col") == "DealValue" else "Deal share"
+        label = args.get("label_col", "?")
+        return f"{val} by {label} — {region_str}{status_str}"
+
+    if tool_name == "scatter_chart":
+        color = args.get("color_col") or "Region"
+        return f"Deal values over time, coloured by {color} — {region_str}{status_str}"
+
+    if tool_name == "kpi_summary":
+        return f"KPI metrics for {region_str}"
+
+    return tool_name
+
+
+def run_agent(
+    user_prompt: str,
+    history: list,
+    df: pd.DataFrame,
+    api_key: str,
+    status_container=None,   # optional st.status() context for live updates
+):
     """
     Send the user prompt to Gemini Flash via OpenRouter with function-calling.
     Executes tool calls, feeds results back, and returns the agent's final response.
@@ -344,6 +389,13 @@ def run_agent(user_prompt: str, history: list, df: pd.DataFrame, api_key: str):
     tool_calls_made: list = []
     tool_summaries: list  = []   # ← ground truth collected for the verifier
 
+    def _status(msg: str):
+        """Write a line to the status container if one was provided."""
+        if status_container is not None:
+            status_container.write(msg)
+
+    _status("🧠 **Understanding your question...**")
+
     # ── Agentic loop (max 4 iterations to avoid runaway calls) ───────────────
     for _ in range(4):
         response = client.chat.completions.create(
@@ -366,15 +418,19 @@ def run_agent(user_prompt: str, history: list, df: pd.DataFrame, api_key: str):
                 tool_args = json.loads(tc.function.arguments)
                 tool_calls_made.append(tool_name)
 
+                desc = _describe_tool_call(tool_name, tool_args)
+                _status(f"🔧 **Selected tool:** `{tool_name}`  \n&nbsp;&nbsp;&nbsp;&nbsp;↳ {desc}")
+
                 fig, summary, extras = execute_tool(tool_name, tool_args, df)
-                tool_summaries.append(f"[{tool_name}] {summary}")  # ← capture ground truth
+                tool_summaries.append(f"[{tool_name}] {summary}")
+
+                _status(f"&nbsp;&nbsp;&nbsp;&nbsp;✓ {summary}")
 
                 if fig is not None:
                     charts.append((tool_name, fig))
                 if extras is not None:
                     kpi_data.append(extras)
 
-                # Feed result back to the model
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tc.id,
@@ -383,6 +439,7 @@ def run_agent(user_prompt: str, history: list, df: pd.DataFrame, api_key: str):
 
         # ── Final text response ───────────────────────────────────────────────
         else:
+            _status("📝 **Writing analysis...**")
             final_text = choice.message.content or ""
             return final_text, charts, kpi_data, tool_calls_made, tool_summaries
 
@@ -617,28 +674,45 @@ if user_prompt:
     with st.chat_message("user"):
         st.markdown(user_prompt)
 
-    # ── Call the agent ────────────────────────────────────────────────────────
+    # ── Call the agent with a live status log ─────────────────────────────────
     with st.chat_message("assistant"):
-        with st.spinner("🤖 Agent thinking…"):
+        with st.status("🤖 Agent working...", expanded=True) as status:
             try:
-                final_text, charts, kpi_data_list, tool_names = run_agent(
+                final_text, charts, kpi_data_list, tool_names, tool_summaries = run_agent(
                     user_prompt,
                     st.session_state.api_messages,
                     df,
                     OPENROUTER_API_KEY,
+                    status_container=status,
                 )
                 error_occurred = False
             except Exception as exc:
-                final_text      = f"⚠️ Agent error: `{exc}`"
-                charts          = []
-                kpi_data_list   = []
-                tool_names      = []
-                error_occurred  = True
+                final_text     = f"⚠️ Agent error: `{exc}`"
+                charts         = []
+                kpi_data_list  = []
+                tool_names     = []
+                tool_summaries = []
+                error_occurred = True
 
-        # ── Assemble display elements for this turn ───────────────────────────
+            # Run verifier inside the same status block
+            if not error_occurred and tool_summaries:
+                status.write("🔍 **Verifying accuracy...**")
+                verification = verify_response(final_text, tool_summaries, OPENROUTER_API_KEY)
+            else:
+                verification = None
+
+            # Collapse with a final summary label
+            if error_occurred:
+                status.update(label="❌ Agent encountered an error", state="error", expanded=True)
+            elif verification and verification.get("verdict") == "significant_issues":
+                status.update(label="⚠️ Done — accuracy issues flagged", state="complete", expanded=False)
+            else:
+                status.update(label="✅ Done", state="complete", expanded=False)
+
+        # ── Assemble and render display elements ──────────────────────────────
         display_elements = []
 
-        # 1. Tool badges (which tools were called)
+        # 1. Tool badges
         if tool_names:
             badges_html = "".join(
                 f"<span class='tool-badge'>🔧 {t}</span>" for t in tool_names
@@ -665,46 +739,42 @@ if user_prompt:
             st.markdown(final_text)
             display_elements.append({"type": "text", "data": final_text})
 
-        # 5. Verification badge (runs automatically after every response)
-        if not error_occurred and tool_summaries:
-            with st.spinner("🔍 Verifying accuracy…"):
-                verification = verify_response(final_text, tool_summaries, OPENROUTER_API_KEY)
-            if verification:
-                # Render inline
-                v = verification
-                verdict   = v.get("verdict", "unknown")
-                confidence = v.get("confidence", 0)
-                notes     = v.get("notes", "")
-                icon, colour, label = {
-                    "accurate":           ("✅", "#22c55e", "Verified accurate"),
-                    "minor_issues":       ("⚠️", "#f59e0b", "Minor issues"),
-                    "significant_issues": ("❌", "#ef4444", "Significant issues"),
-                }.get(verdict, ("❓", "#94a3b8", "Verification unknown"))
-                st.markdown(
-                    f"""
-                    <div style='
-                        display:inline-flex; align-items:flex-start; gap:0.6rem;
-                        background:rgba(255,255,255,0.03);
-                        border:1px solid {colour}44;
-                        border-left: 3px solid {colour};
-                        border-radius:10px;
-                        padding:0.6rem 0.9rem;
-                        margin-top:0.5rem;
-                        font-size:0.8rem;
-                        line-height:1.5;
-                        max-width:600px;
-                    '>
-                        <span style='font-size:1rem;flex-shrink:0'>{icon}</span>
-                        <div>
-                            <span style='font-weight:700; color:{colour};'>{label}</span>
-                            <span style='color:rgba(255,255,255,0.3); margin-left:0.5rem;'>({confidence}% confidence)</span><br>
-                            <span style='color:rgba(255,255,255,0.5);'>{notes}</span>
-                        </div>
+        # 5. Verification badge
+        if verification:
+            v          = verification
+            verdict    = v.get("verdict", "unknown")
+            confidence = v.get("confidence", 0)
+            notes      = v.get("notes", "")
+            icon, colour, label = {
+                "accurate":           ("✅", "#22c55e", "Verified accurate"),
+                "minor_issues":       ("⚠️", "#f59e0b", "Minor issues"),
+                "significant_issues": ("❌", "#ef4444", "Significant issues"),
+            }.get(verdict, ("❓", "#94a3b8", "Verification unknown"))
+            st.markdown(
+                f"""
+                <div style='
+                    display:inline-flex; align-items:flex-start; gap:0.6rem;
+                    background:rgba(255,255,255,0.03);
+                    border:1px solid {colour}44;
+                    border-left:3px solid {colour};
+                    border-radius:10px;
+                    padding:0.6rem 0.9rem;
+                    margin-top:0.5rem;
+                    font-size:0.8rem;
+                    line-height:1.5;
+                    max-width:620px;
+                '>
+                    <span style='font-size:1rem;flex-shrink:0'>{icon}</span>
+                    <div>
+                        <span style='font-weight:700;color:{colour};'>{label}</span>
+                        <span style='color:rgba(255,255,255,0.3);margin-left:0.5rem;'>({confidence}% confidence)</span><br>
+                        <span style='color:rgba(255,255,255,0.5);'>{notes}</span>
                     </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-                display_elements.append({"type": "verification", "data": verification})
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            display_elements.append({"type": "verification", "data": verification})
 
     # ── Persist to session state ──────────────────────────────────────────────
     st.session_state.display_history.append(
