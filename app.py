@@ -319,10 +319,11 @@ def run_agent(user_prompt: str, history: list, df: pd.DataFrame, api_key: str):
 
     Returns
     -------
-    final_text : str
-    charts     : list of (tool_name: str, plotly_fig)
-    kpi_data   : list of dict  (from kpi_summary calls)
-    tool_calls_made : list of str  (tool names called, for badge display)
+    final_text      : str
+    charts          : list of (tool_name: str, plotly_fig)
+    kpi_data        : list of dict  (from kpi_summary calls)
+    tool_calls_made : list of str   (tool names called, for badge display)
+    tool_summaries  : list of str   (raw tool output text — ground truth for verifier)
     """
     client = OpenAI(
         base_url="https://openrouter.ai/api/v1",
@@ -338,9 +339,10 @@ def run_agent(user_prompt: str, history: list, df: pd.DataFrame, api_key: str):
     messages.extend(history)
     messages.append({"role": "user", "content": user_prompt})
 
-    charts: list         = []
-    kpi_data: list       = []
+    charts: list          = []
+    kpi_data: list        = []
     tool_calls_made: list = []
+    tool_summaries: list  = []   # ← ground truth collected for the verifier
 
     # ── Agentic loop (max 4 iterations to avoid runaway calls) ───────────────
     for _ in range(4):
@@ -365,6 +367,7 @@ def run_agent(user_prompt: str, history: list, df: pd.DataFrame, api_key: str):
                 tool_calls_made.append(tool_name)
 
                 fig, summary, extras = execute_tool(tool_name, tool_args, df)
+                tool_summaries.append(f"[{tool_name}] {summary}")  # ← capture ground truth
 
                 if fig is not None:
                     charts.append((tool_name, fig))
@@ -381,9 +384,73 @@ def run_agent(user_prompt: str, history: list, df: pd.DataFrame, api_key: str):
         # ── Final text response ───────────────────────────────────────────────
         else:
             final_text = choice.message.content or ""
-            return final_text, charts, kpi_data, tool_calls_made
+            return final_text, charts, kpi_data, tool_calls_made, tool_summaries
 
-    return "I've generated the charts above.", charts, kpi_data, tool_calls_made
+    return "I've generated the charts above.", charts, kpi_data, tool_calls_made, tool_summaries
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# VERIFIER  –  LLM-as-judge: checks the agent's written claims against
+#              the actual tool outputs (ground truth)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def verify_response(final_text: str, tool_summaries: list, api_key: str) -> dict | None:
+    """
+    Run a fast verification pass comparing the agent's written analysis against
+    the exact numbers returned by the tools.
+
+    Returns a dict: {verdict, confidence, notes} or None if nothing to verify.
+    """
+    if not tool_summaries or not final_text.strip():
+        return None
+
+    client = OpenAI(
+        base_url="https://openrouter.ai/api/v1",
+        api_key=api_key,
+        default_headers={
+            "HTTP-Referer": "https://localhost/kpi-agent",
+            "X-Title": "KPI Chart Agent Verifier",
+        },
+    )
+
+    ground_truth = "\n".join(f"  • {s}" for s in tool_summaries)
+
+    try:
+        response = client.chat.completions.create(
+            model="google/gemini-3.1-flash-lite",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a fact-checker for an AI data analytics agent. "
+                        "Compare the agent's written response against the tool output data (ground truth). "
+                        "Check if any numbers, percentages, region names, or factual claims "
+                        "in the response contradict or are absent from the tool outputs. "
+                        "Minor rounding or rephrasing is acceptable. "
+                        "Respond ONLY with valid JSON — no markdown, no extra text:\n"
+                        '{"verdict": "accurate" | "minor_issues" | "significant_issues", '
+                        '"confidence": <integer 0-100>, '
+                        '"notes": "<one concise sentence>"}'
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        f"Tool outputs (ground truth):\n{ground_truth}\n\n"
+                        f"Agent's written response:\n{final_text}"
+                    ),
+                },
+            ],
+            temperature=0.0,
+            max_tokens=120,
+        )
+        raw = response.choices[0].message.content.strip()
+        # Strip accidental markdown fences
+        if "```" in raw:
+            raw = raw.split("```")[1].lstrip("json").strip()
+        return json.loads(raw)
+    except Exception:
+        return {"verdict": "unknown", "confidence": 0, "notes": "Verification could not be completed."}
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -486,6 +553,40 @@ def render_display_item(item: dict):
                 f"<span class='tool-badge'>🔧 {t}</span>" for t in el["data"]
             )
             st.markdown(badges_html, unsafe_allow_html=True)
+        elif el["type"] == "verification":
+            v = el["data"]
+            verdict   = v.get("verdict", "unknown")
+            confidence = v.get("confidence", 0)
+            notes     = v.get("notes", "")
+            icon, colour, label = {
+                "accurate":            ("✅", "#22c55e", "Verified accurate"),
+                "minor_issues":        ("⚠️", "#f59e0b", "Minor issues"),
+                "significant_issues":  ("❌", "#ef4444", "Significant issues"),
+            }.get(verdict, ("❓", "#94a3b8", "Verification unknown"))
+            st.markdown(
+                f"""
+                <div style='
+                    display:inline-flex; align-items:flex-start; gap:0.6rem;
+                    background:rgba(255,255,255,0.03);
+                    border:1px solid {colour}44;
+                    border-left: 3px solid {colour};
+                    border-radius:10px;
+                    padding:0.6rem 0.9rem;
+                    margin-top:0.5rem;
+                    font-size:0.8rem;
+                    line-height:1.5;
+                    max-width:600px;
+                '>
+                    <span style='font-size:1rem;flex-shrink:0'>{icon}</span>
+                    <div>
+                        <span style='font-weight:700; color:{colour};'>{label}</span>
+                        <span style='color:rgba(255,255,255,0.3); margin-left:0.5rem;'>({confidence}% confidence)</span><br>
+                        <span style='color:rgba(255,255,255,0.5);'>{notes}</span>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -563,6 +664,47 @@ if user_prompt:
         if final_text:
             st.markdown(final_text)
             display_elements.append({"type": "text", "data": final_text})
+
+        # 5. Verification badge (runs automatically after every response)
+        if not error_occurred and tool_summaries:
+            with st.spinner("🔍 Verifying accuracy…"):
+                verification = verify_response(final_text, tool_summaries, OPENROUTER_API_KEY)
+            if verification:
+                # Render inline
+                v = verification
+                verdict   = v.get("verdict", "unknown")
+                confidence = v.get("confidence", 0)
+                notes     = v.get("notes", "")
+                icon, colour, label = {
+                    "accurate":           ("✅", "#22c55e", "Verified accurate"),
+                    "minor_issues":       ("⚠️", "#f59e0b", "Minor issues"),
+                    "significant_issues": ("❌", "#ef4444", "Significant issues"),
+                }.get(verdict, ("❓", "#94a3b8", "Verification unknown"))
+                st.markdown(
+                    f"""
+                    <div style='
+                        display:inline-flex; align-items:flex-start; gap:0.6rem;
+                        background:rgba(255,255,255,0.03);
+                        border:1px solid {colour}44;
+                        border-left: 3px solid {colour};
+                        border-radius:10px;
+                        padding:0.6rem 0.9rem;
+                        margin-top:0.5rem;
+                        font-size:0.8rem;
+                        line-height:1.5;
+                        max-width:600px;
+                    '>
+                        <span style='font-size:1rem;flex-shrink:0'>{icon}</span>
+                        <div>
+                            <span style='font-weight:700; color:{colour};'>{label}</span>
+                            <span style='color:rgba(255,255,255,0.3); margin-left:0.5rem;'>({confidence}% confidence)</span><br>
+                            <span style='color:rgba(255,255,255,0.5);'>{notes}</span>
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+                display_elements.append({"type": "verification", "data": verification})
 
     # ── Persist to session state ──────────────────────────────────────────────
     st.session_state.display_history.append(
