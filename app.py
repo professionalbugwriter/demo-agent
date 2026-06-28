@@ -270,7 +270,21 @@ with st.sidebar:
 
 
 # ── Resolve the active API key ────────────────────────────────────────────────
-OPENROUTER_API_KEY = sidebar_key.strip() or os.getenv("OPENROUTER_API_KEY", "")
+# ── Resolve API key: st.secrets (Cloud) → env var (local) → sidebar input ──
+def _get_api_key() -> str:
+    # 1. Streamlit Community Cloud secrets (TOML)
+    try:
+        return st.secrets["OPENROUTER_API_KEY"]
+    except (KeyError, FileNotFoundError):
+        pass
+    # 2. Environment variable / .env file
+    env_key = os.getenv("OPENROUTER_API_KEY", "")
+    if env_key:
+        return env_key
+    # 3. Sidebar manual input (dev fallback)
+    return sidebar_key.strip()
+
+OPENROUTER_API_KEY = _get_api_key()
 
 # ══════════════════════════════════════════════════════════════════════════════
 # SYSTEM PROMPT  –  tells Gemini what data it has and how to behave
