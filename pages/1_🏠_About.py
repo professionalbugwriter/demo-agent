@@ -2,8 +2,8 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 st.set_page_config(
-    page_title="CraftSync · Chart Agent",
-    page_icon="📊",
+    page_title="KPI Agent Swarm · About",
+    page_icon="🐝",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
@@ -35,7 +35,7 @@ PAGE_HTML = """
   a { color: inherit; text-decoration: none; }
 
   .page {
-    max-width: 760px;
+    max-width: 780px;
     margin: 0 auto;
     padding: 4rem 2rem 5rem;
   }
@@ -57,12 +57,10 @@ PAGE_HTML = """
     font-size: 1.2rem; font-weight: 900; color: #000;
     flex-shrink: 0;
   }
-  .brand-info {}
   .brand-name {
     font-size: 1rem; font-weight: 700;
     letter-spacing: 0.06em; text-transform: uppercase;
-    color: #fff;
-    line-height: 1;
+    color: #fff; line-height: 1;
   }
   .brand-url {
     font-size: 0.78rem;
@@ -72,9 +70,9 @@ PAGE_HTML = """
   }
   .brand-url a:hover { color: rgba(255,255,255,0.7); }
 
-  /* ── Text content ── */
+  /* ── Typography ── */
   h1 {
-    font-size: 1.9rem;
+    font-size: 1.95rem;
     font-weight: 800;
     letter-spacing: -0.025em;
     line-height: 1.2;
@@ -82,7 +80,7 @@ PAGE_HTML = """
     margin-bottom: 1rem;
   }
   h1 span {
-    background: linear-gradient(90deg, #ff3eb5, #a855f7, #22d3ee);
+    background: linear-gradient(90deg, #facc15, #fb923c, #f43f5e);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
@@ -104,6 +102,55 @@ PAGE_HTML = """
     margin: 2.5rem 0 1rem;
   }
 
+  /* ── Agent pipeline ── */
+  .pipeline {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    margin-bottom: 1.8rem;
+  }
+  .agent-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.9rem;
+    padding: 0.9rem 1.1rem;
+    border-radius: 12px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.07);
+    transition: border-color 0.2s;
+  }
+  .agent-row:hover { border-color: rgba(255,255,255,0.14); }
+  .agent-icon {
+    font-size: 1.1rem;
+    flex-shrink: 0;
+    margin-top: 0.05rem;
+  }
+  .agent-body {}
+  .agent-name {
+    font-size: 0.84rem;
+    font-weight: 700;
+    color: rgba(255,255,255,0.85);
+    margin-bottom: 0.18rem;
+  }
+  .agent-name .badge {
+    display: inline-block;
+    font-size: 0.62rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 0.1rem 0.5rem;
+    border-radius: 999px;
+    margin-left: 0.45rem;
+    vertical-align: middle;
+  }
+  .badge-llm  { background: rgba(168,85,247,0.15); color: #a855f7; border: 1px solid rgba(168,85,247,0.25); }
+  .badge-py   { background: rgba(34,211,238,0.12); color: #22d3ee; border: 1px solid rgba(34,211,238,0.2); }
+  .agent-desc {
+    font-size: 0.8rem;
+    color: rgba(255,255,255,0.35);
+    line-height: 1.55;
+  }
+
   /* ── Chart type pills ── */
   .pills {
     display: flex;
@@ -118,10 +165,10 @@ PAGE_HTML = """
     font-size: 0.8rem; font-weight: 500;
     border: 1px solid;
   }
-  .p1 { color: #ff3eb5; border-color: rgba(255,62,181,0.3); background: rgba(255,62,181,0.07); }
-  .p2 { color: #a855f7; border-color: rgba(168,85,247,0.3); background: rgba(168,85,247,0.07); }
-  .p3 { color: #22d3ee; border-color: rgba(34,211,238,0.3); background: rgba(34,211,238,0.07); }
-  .p4 { color: #fb923c; border-color: rgba(251,146,60,0.3); background: rgba(251,146,60,0.07); }
+  .p1 { color: #fb923c; border-color: rgba(251,146,60,0.3); background: rgba(251,146,60,0.07); }
+  .p2 { color: #facc15; border-color: rgba(250,204,21,0.3); background: rgba(250,204,21,0.07); }
+  .p3 { color: #a855f7; border-color: rgba(168,85,247,0.3); background: rgba(168,85,247,0.07); }
+  .p4 { color: #22d3ee; border-color: rgba(34,211,238,0.3); background: rgba(34,211,238,0.07); }
   .p5 { color: #34d399; border-color: rgba(52,211,153,0.3); background: rgba(52,211,153,0.07); }
 
   /* ── Dataset columns ── */
@@ -143,9 +190,22 @@ PAGE_HTML = """
     color: rgba(255,255,255,0.7);
     margin-bottom: 0.2rem;
   }
-  .col-type {
-    font-size: 0.7rem;
-    color: rgba(255,255,255,0.25);
+  .col-type { font-size: 0.7rem; color: rgba(255,255,255,0.25); }
+
+  /* ── Tech stack ── */
+  .stack {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+  }
+  .tech {
+    font-size: 0.78rem; font-weight: 500;
+    padding: 0.3rem 0.8rem;
+    border-radius: 8px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.09);
+    color: rgba(255,255,255,0.55);
   }
 
   /* ── CTA ── */
@@ -185,19 +245,115 @@ PAGE_HTML = """
   </div>
 
   <!-- Intro -->
-  <h1>Chart-on-the-Fly <span>Agent</span></h1>
+  <h1>Sales KPI <span>Agent Swarm</span></h1>
 
   <p>
     Built by <strong>CraftSync</strong> — strategic design meeting technical precision.
-    This is a local, open-source AI agent that generates interactive data visualisations
-    directly from natural language. No dropdowns, no config. Just ask.
+    An open-source, local alternative to Microsoft Copilot Studio that orchestrates
+    <strong>six specialised AI agents</strong> in real-time to answer natural language
+    questions about sales data with interactive charts and verified insights.
   </p>
 
   <p>
-    The agent is powered by <strong>Gemini 3.1 Flash Lite</strong> via OpenRouter, using
-    function-calling to decide which chart to build, what filters to apply, and how to
-    group the data — all from a single plain-English prompt.
+    Every message activates a coordinated pipeline: one agent parses your intent,
+    another filters the dataset, a third computes KPIs, a fourth renders charts,
+    a fifth narrates the findings — and a sixth fact-checks every claim against the
+    actual data before you see it.
   </p>
+
+  <!-- Agent pipeline -->
+  <h2>Agent Pipeline</h2>
+  <div class="pipeline">
+
+    <div class="agent-row">
+      <div class="agent-icon">🔍</div>
+      <div class="agent-body">
+        <div class="agent-name">
+          Intent Agent
+          <span class="badge badge-llm">LLM</span>
+        </div>
+        <div class="agent-desc">
+          Extracts structured entities — region, product, status filter, and query
+          type — from free-form natural language using Gemini 3.1 Flash Lite.
+          Falls back to keyword scanning if the LLM is unavailable.
+        </div>
+      </div>
+    </div>
+
+    <div class="agent-row">
+      <div class="agent-icon">🗄️</div>
+      <div class="agent-body">
+        <div class="agent-name">
+          Data Agent
+          <span class="badge badge-py">Python</span>
+        </div>
+        <div class="agent-desc">
+          Applies the parsed filters to the sales DataFrame using Pandas.
+          Computes data statistics (row count, date range) for downstream agents.
+        </div>
+      </div>
+    </div>
+
+    <div class="agent-row">
+      <div class="agent-icon">📐</div>
+      <div class="agent-body">
+        <div class="agent-name">
+          KPI Agent
+          <span class="badge badge-py">Python</span>
+        </div>
+        <div class="agent-desc">
+          Computes key metrics — total revenue (won deals), win rate, average deal
+          size, pipeline count — from the filtered dataset with no LLM involvement.
+        </div>
+      </div>
+    </div>
+
+    <div class="agent-row">
+      <div class="agent-icon">📊</div>
+      <div class="agent-body">
+        <div class="agent-name">
+          Viz Agent
+          <span class="badge badge-llm">LLM + Tools</span>
+        </div>
+        <div class="agent-desc">
+          Uses Gemini function-calling to select and execute the right chart tool
+          (bar, line, pie, scatter, KPI summary) based on query type. Routes
+          automatically — no manual chart selection required.
+        </div>
+      </div>
+    </div>
+
+    <div class="agent-row">
+      <div class="agent-icon">📝</div>
+      <div class="agent-body">
+        <div class="agent-name">
+          Narrator Agent
+          <span class="badge badge-llm">LLM</span>
+        </div>
+        <div class="agent-desc">
+          Writes a 2–4 sentence analytical summary with the actual computed numbers
+          injected as ground truth. The model can only narrate real data —
+          hallucination is structurally prevented.
+        </div>
+      </div>
+    </div>
+
+    <div class="agent-row">
+      <div class="agent-icon">✅</div>
+      <div class="agent-body">
+        <div class="agent-name">
+          Verifier
+          <span class="badge badge-llm">LLM-as-Judge</span>
+        </div>
+        <div class="agent-desc">
+          A final quality gate that compares the Narrator's prose against the
+          tool output data. Returns a verdict (accurate / minor issues /
+          significant issues) with a confidence score before the response is shown.
+        </div>
+      </div>
+    </div>
+
+  </div>
 
   <!-- Chart types -->
   <h2>Chart types</h2>
@@ -208,21 +364,20 @@ PAGE_HTML = """
     <span class="pill p4">🔵 Scatter Plot</span>
     <span class="pill p5">🎯 KPI Summary</span>
   </div>
-
   <p>
-    The agent picks the right chart automatically. Bar charts for comparisons,
-    line charts for trends, pie charts for proportions, scatter plots for distribution,
-    and KPI cards when you need headline numbers. It can call multiple tools in one
-    response when the question calls for it.
+    The Viz Agent picks the right chart automatically based on your question.
+    Bar charts for comparisons, line charts for trends, pie charts for proportions,
+    scatter plots for distribution analysis, and KPI cards when you need
+    headline numbers. It can call multiple tools in a single response.
   </p>
 
   <!-- Dataset -->
   <h2>Dataset</h2>
   <p>
-    The agent works against a <strong>1,000-row mock sales dataset</strong> spanning
+    The swarm operates on a <strong>1,000-row mock sales dataset</strong> spanning
     the last 90 days across 5 regions and 4 products. In production, swap
     <code style="font-size:0.82rem; color:rgba(255,255,255,0.5); background:rgba(255,255,255,0.06); padding:0.1rem 0.4rem; border-radius:4px;">generate_mock_data()</code>
-    with a live SQL query or API call.
+    with a live SQL query or API call — the swarm pipeline is data-source agnostic.
   </p>
 
   <div class="cols">
@@ -248,9 +403,22 @@ PAGE_HTML = """
     </div>
   </div>
 
+  <!-- Tech stack -->
+  <h2>Tech Stack</h2>
+  <div class="stack">
+    <span class="tech">Python</span>
+    <span class="tech">Streamlit</span>
+    <span class="tech">Pandas</span>
+    <span class="tech">Plotly</span>
+    <span class="tech">Gemini 3.1 Flash Lite</span>
+    <span class="tech">OpenRouter</span>
+    <span class="tech">OpenAI SDK</span>
+  </div>
+
   <!-- CTA -->
   <div class="cta">
     <a href="#" class="btn btn-solid" onclick="window.top.open('https://www.thecraftsync.com', '_blank'); return false;">Contact Us ↗</a>
+    <a href="#" class="btn btn-outline" onclick="window.top.open('https://github.com/professionalbugwriter/demo-agent', '_blank'); return false;">GitHub ↗</a>
   </div>
 
 </div>
@@ -258,4 +426,4 @@ PAGE_HTML = """
 </html>
 """
 
-components.html(PAGE_HTML, height=1200, scrolling=True)
+components.html(PAGE_HTML, height=1400, scrolling=True)
